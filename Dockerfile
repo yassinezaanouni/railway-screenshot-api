@@ -1,8 +1,5 @@
 FROM node:20-slim
 
-# Set environment to skip Chromium download during npm install
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-
 # Install system dependencies for Playwright Chromium
 RUN apt-get update && apt-get install -y \
     wget \
@@ -44,10 +41,13 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (need devDeps for TypeScript build)
+# Install all dependencies
 RUN npm ci
 
-# Install Playwright Chromium browser
+# Set Playwright browsers path to a location accessible by all users
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
+
+# Install Playwright Chromium browser to the shared path
 RUN npx playwright install chromium
 
 # Copy source
@@ -55,13 +55,6 @@ COPY . .
 
 # Build TypeScript
 RUN npm run build
-
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser \
-    && chown -R appuser:appuser /app \
-    && chown -R appuser:appuser /root/.cache
-
-USER appuser
 
 # Expose port
 EXPOSE 3000
