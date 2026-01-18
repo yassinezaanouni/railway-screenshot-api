@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { BrowserPool } from './browser-pool.js';
 import { ScreenshotService, ScreenshotOptions } from './screenshot.js';
 
@@ -11,6 +12,60 @@ const POOL_SIZE = parseInt(process.env.POOL_SIZE || '10', 10);
 
 // Browser pool and screenshot service
 let screenshotService: ScreenshotService;
+
+// Zod schemas for validation
+const ScreenshotQuerySchema = z.object({
+  url: z.string().url('Invalid URL format'),
+  fullPage: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  type: z.enum(['png', 'jpeg', 'pdf']).optional().default('png'),
+  quality: z.coerce
+    .number()
+    .int()
+    .min(1, 'Quality must be at least 1')
+    .max(100, 'Quality must be at most 100')
+    .optional(),
+  width: z.coerce.number().int().min(1).max(3840).optional(),
+  height: z.coerce.number().int().min(1).max(2160).optional(),
+  delay: z.coerce.number().int().min(0).max(30).optional(),
+  device: z.enum(['desktop', 'tablet', 'mobile']).optional(),
+  blockAds: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional()
+    .default('true'),
+});
+
+const BatchBodySchema = z.object({
+  urls: z
+    .array(z.string().url('Invalid URL format'))
+    .min(1, 'At least one URL is required')
+    .max(20, 'Maximum 20 URLs per batch'),
+  options: z
+    .object({
+      fullPage: z.boolean().optional(),
+      type: z.enum(['png', 'jpeg', 'pdf']).optional(),
+      quality: z.number().int().min(1).max(100).optional(),
+      width: z.number().int().min(1).max(3840).optional(),
+      height: z.number().int().min(1).max(2160).optional(),
+      delay: z.number().int().min(0).max(30).optional(),
+      device: z.enum(['desktop', 'tablet', 'mobile']).optional(),
+      blockAds: z.boolean().optional().default(true),
+    })
+    .optional(),
+});
+
+// Format Zod errors into readable messages
+function formatZodError(error: z.ZodError): string {
+  return error.errors
+    .map((err) => {
+      const path = err.path.join('.');
+      return path ? `${path}: ${err.message}` : err.message;
+    })
+    .join('; ');
+}
 
 // API Key middleware
 const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
@@ -45,21 +100,30 @@ app.get('/stats', (req, res) => {
 app.get('/take', authMiddleware, async (req, res) => {
   const startTime = Date.now();
 
+  // Validate query parameters
+  const parseResult = ScreenshotQuerySchema.safeParse(req.query);
+
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: formatZodError(parseResult.error),
+    });
+  }
+
+  const validated = parseResult.data;
+
   try {
     const options: ScreenshotOptions = {
-      url: req.query.url as string,
-      fullPage: req.query.fullPage === 'true',
-      type: (req.query.type as 'png' | 'jpeg' | 'pdf') || 'png',
-      quality: req.query.quality ? parseInt(req.query.quality as string, 10) : undefined,
-      width: req.query.width ? parseInt(req.query.width as string, 10) : undefined,
-      height: req.query.height ? parseInt(req.query.height as string, 10) : undefined,
-      delay: req.query.delay ? parseInt(req.query.delay as string, 10) : undefined,
-      device: req.query.device as 'desktop' | 'tablet' | 'mobile' | undefined,
+      url: validated.url,
+      fullPage: validated.fullPage,
+      type: validated.type,
+      quality: validated.quality,
+      width: validated.width,
+      height: validated.height,
+      delay: validated.delay,
+      device: validated.device,
+      blockAds: validated.blockAds,
     };
-
-    if (!options.url) {
-      return res.status(400).json({ error: 'url parameter is required' });
-    }
 
     const screenshot = await screenshotService.capture(options);
 
@@ -80,17 +144,19 @@ app.get('/take', authMiddleware, async (req, res) => {
 app.post('/batch', authMiddleware, async (req, res) => {
   const startTime = Date.now();
 
+  // Validate request body
+  const parseResult = BatchBodySchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: formatZodError(parseResult.error),
+    });
+  }
+
+  const { urls, options: globalOptions } = parseResult.data;
+
   try {
-    const { urls, options: globalOptions } = req.body;
-
-    if (!urls || !Array.isArray(urls) || urls.length === 0) {
-      return res.status(400).json({ error: 'urls array is required' });
-    }
-
-    if (urls.length > 20) {
-      return res.status(400).json({ error: 'Maximum 20 URLs per batch' });
-    }
-
     const optionsArray: ScreenshotOptions[] = urls.map((url: string) => ({
       url,
       ...globalOptions,
