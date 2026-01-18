@@ -28,7 +28,15 @@ export class BrowserPool {
         '--disable-gpu',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--metrics-recording-only',
+        '--no-default-browser-check',
+        '--mute-audio',
+        '--hide-scrollbars',
       ],
     });
 
