@@ -98,6 +98,59 @@ function shouldBlockUrl(url: string): boolean {
   return BLOCKED_REGEXES.some((regex) => regex.test(url));
 }
 
+// Wait for images to load (with timeout to avoid waiting forever)
+async function waitForImages(
+  page: Page,
+  viewportOnly = true,
+  timeout = 5000,
+): Promise<void> {
+  await page.evaluate(
+    ({ maxWait, viewportOnly }) => {
+      return new Promise<void>((resolve) => {
+        const timeoutId = setTimeout(resolve, maxWait);
+
+        const images = Array.from(document.images);
+
+        // Filter to viewport-visible images if requested
+        const targetImages = viewportOnly
+          ? images.filter((img) => {
+              const rect = img.getBoundingClientRect();
+              return (
+                rect.top < window.innerHeight &&
+                rect.bottom > 0 &&
+                rect.left < window.innerWidth &&
+                rect.right > 0
+              );
+            })
+          : images;
+
+        const unloadedImages = targetImages.filter((img) => !img.complete);
+
+        if (unloadedImages.length === 0) {
+          clearTimeout(timeoutId);
+          resolve();
+          return;
+        }
+
+        let loaded = 0;
+        const checkDone = () => {
+          loaded++;
+          if (loaded >= unloadedImages.length) {
+            clearTimeout(timeoutId);
+            resolve();
+          }
+        };
+
+        unloadedImages.forEach((img) => {
+          img.addEventListener('load', checkDone);
+          img.addEventListener('error', checkDone);
+        });
+      });
+    },
+    { maxWait: timeout, viewportOnly },
+  );
+}
+
 // Scroll to bottom to trigger lazy-loaded content
 async function scrollToBottom(page: Page): Promise<void> {
   await page.evaluate(async () => {
@@ -163,9 +216,13 @@ export class ScreenshotService {
         timeout: 30000,
       });
 
-      // Scroll to bottom for full-page screenshots to trigger lazy-loaded content
+      // For viewport screenshots: wait for visible images only
+      // For fullPage: scroll first (triggers lazy-load), then wait for all images
       if (options.fullPage) {
         await scrollToBottom(page);
+        await waitForImages(page, false); // all images after scroll
+      } else {
+        await waitForImages(page, true); // viewport images only
       }
 
       // User-specified delay (optional)
