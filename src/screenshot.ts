@@ -163,15 +163,12 @@ export class ScreenshotService {
         timeout: 30000,
       });
 
-      // Small delay for CSS/fonts to load after DOM ready
-      await page.waitForTimeout(300);
-
       // Scroll to bottom for full-page screenshots to trigger lazy-loaded content
       if (options.fullPage) {
         await scrollToBottom(page);
       }
 
-      // Additional user-specified delay
+      // User-specified delay (optional)
       if (options.delay && options.delay > 0) {
         await page.waitForTimeout(options.delay * 1000);
       }
