@@ -157,18 +157,21 @@ export class ScreenshotService {
 
       await page.setViewportSize(viewport);
 
-      // Navigate to URL
+      // Navigate to URL - use domcontentloaded for speed (ads are blocked anyway)
       await page.goto(options.url, {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: 30000,
       });
+
+      // Small delay for CSS/fonts to load after DOM ready
+      await page.waitForTimeout(300);
 
       // Scroll to bottom for full-page screenshots to trigger lazy-loaded content
       if (options.fullPage) {
         await scrollToBottom(page);
       }
 
-      // Optional delay
+      // Additional user-specified delay
       if (options.delay && options.delay > 0) {
         await page.waitForTimeout(options.delay * 1000);
       }
