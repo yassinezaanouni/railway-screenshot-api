@@ -162,20 +162,27 @@ app.post('/batch', authMiddleware, async (req, res) => {
       ...globalOptions,
     }));
 
-    const screenshots = await screenshotService.captureMany(optionsArray);
+    const captureResults = await screenshotService.captureMany(optionsArray);
 
     const duration = Date.now() - startTime;
-    console.log(`Batch of ${urls.length} screenshots captured in ${duration}ms`);
+    const successCount = captureResults.filter((r) => r.success).length;
+    console.log(
+      `Batch: ${successCount}/${urls.length} screenshots captured in ${duration}ms`,
+    );
 
-    // Return as JSON with base64 encoded images
-    const results = screenshots.map((buffer, index) => ({
-      url: urls[index],
-      image: buffer.toString('base64'),
-      type: globalOptions?.type || 'png',
+    // Return as JSON with base64 encoded images (partial failures supported)
+    const results = captureResults.map((result) => ({
+      url: result.url,
+      success: result.success,
+      image: result.buffer?.toString('base64'),
+      error: result.error,
+      type: result.success ? globalOptions?.type || 'png' : undefined,
     }));
 
     res.json({
       count: results.length,
+      successCount,
+      failedCount: results.length - successCount,
       durationMs: duration,
       avgMs: Math.round(duration / results.length),
       results,

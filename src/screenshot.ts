@@ -197,7 +197,24 @@ export class ScreenshotService {
     }
   }
 
-  async captureMany(optionsArray: ScreenshotOptions[]): Promise<Buffer[]> {
-    return Promise.all(optionsArray.map((opts) => this.capture(opts)));
+  async captureMany(
+    optionsArray: ScreenshotOptions[],
+  ): Promise<{ url: string; success: boolean; buffer?: Buffer; error?: string }[]> {
+    const results = await Promise.allSettled(
+      optionsArray.map((opts) => this.capture(opts)),
+    );
+
+    return results.map((result, index) => {
+      const url = optionsArray[index].url;
+      if (result.status === 'fulfilled') {
+        return { url, success: true, buffer: result.value };
+      } else {
+        return {
+          url,
+          success: false,
+          error: result.reason?.message || 'Screenshot failed',
+        };
+      }
+    });
   }
 }
