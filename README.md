@@ -6,11 +6,13 @@ A high-performance screenshot API built for Railway deployment. Features browser
 
 - **Browser Pool** - Pre-warmed Chromium instances for fast response times
 - **Ad & Cookie Blocking** - Blocks 65+ ad networks and cookie consent popups (enabled by default)
-- **Lazy-Load Handling** - Auto-scrolls pages to trigger lazy-loaded images
-- **Batch Processing** - Capture up to 20 URLs in parallel
-- **Multiple Formats** - PNG, JPEG, and PDF output
-- **Device Presets** - Desktop, tablet, and mobile viewports
+- **Smart Image Waiting** - Dynamically waits for images to load (5s timeout), viewport-aware for faster captures
+- **Lazy-Load Handling** - Auto-scrolls full-page captures to trigger lazy-loaded content
+- **Batch Processing** - Capture up to 20 URLs in parallel with partial failure support
+- **Multiple Formats** - PNG, JPEG, and PDF (A4) output
+- **Device Presets** - Desktop (1280×720), tablet (768×1024), and mobile (375×667) viewports
 - **Zod Validation** - Clear error messages for invalid requests
+- **Graceful Shutdown** - Clean browser cleanup on SIGTERM
 
 ## Quick Start
 
@@ -84,9 +86,13 @@ curl https://your-api.railway.app/stats
 | `quality` | number | `80` | JPEG quality (1-100) |
 | `width` | number | `1280` | Viewport width (1-3840) |
 | `height` | number | `720` | Viewport height (1-2160) |
-| `delay` | number | `0` | Wait seconds after load (0-30) |
+| `delay` | number | `0` | Additional wait seconds after load (0-30) |
 | `device` | string | - | Preset: `desktop`, `tablet`, `mobile` |
 | `blockAds` | boolean | `true` | Block ads and cookie popups |
+
+**Response Headers:**
+- `Content-Type`: `image/png`, `image/jpeg`, or `application/pdf`
+- `X-Duration-Ms`: Time taken to capture the screenshot
 
 **Examples:**
 
@@ -129,11 +135,28 @@ Capture multiple URLs in parallel (max 20).
 ```json
 {
   "count": 2,
+  "successCount": 2,
+  "failedCount": 0,
   "durationMs": 3500,
   "avgMs": 1750,
   "results": [
-    {"url": "https://example.com", "image": "base64...", "type": "png"},
-    {"url": "https://github.com", "image": "base64...", "type": "png"}
+    {"url": "https://example.com", "success": true, "image": "base64...", "type": "png"},
+    {"url": "https://github.com", "success": true, "image": "base64...", "type": "png"}
+  ]
+}
+```
+
+**Partial Failure Example:**
+```json
+{
+  "count": 2,
+  "successCount": 1,
+  "failedCount": 1,
+  "durationMs": 5000,
+  "avgMs": 2500,
+  "results": [
+    {"url": "https://example.com", "success": true, "image": "base64...", "type": "png"},
+    {"url": "https://invalid-url.test", "success": false, "error": "net::ERR_NAME_NOT_RESOLVED"}
   ]
 }
 ```
@@ -168,6 +191,7 @@ curl -X POST "https://your-api.railway.app/batch" \
 │  ┌─────────────────────────────────────────────────┐   │
 │  │           Screenshot Service                     │   │
 │  │  • Ad/Cookie Blocking (route interception)      │   │
+│  │  • Smart Image Waiting (viewport-aware)         │   │
 │  │  • Scroll-to-bottom (lazy-load handling)        │   │
 │  │  • PNG/JPEG/PDF capture                         │   │
 │  └──────────────────────┬──────────────────────────┘   │
@@ -205,10 +229,12 @@ The included `railway.toml` configures:
 ```toml
 [build]
 builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/"
-healthcheckTimeout = 100
+healthcheckTimeout = 300
+startCommand = "npm start"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 ```

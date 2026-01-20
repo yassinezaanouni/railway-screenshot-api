@@ -210,9 +210,9 @@ export class ScreenshotService {
 
       await page.setViewportSize(viewport);
 
-      // Navigate to URL - use domcontentloaded for speed (ads are blocked anyway)
+      // Navigate to URL - use networkidle to wait for JS-rendered content
       await page.goto(options.url, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'networkidle',
         timeout: 30000,
       });
 
